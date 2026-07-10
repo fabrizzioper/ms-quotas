@@ -2,7 +2,7 @@
 
 Microservicio de cuotas de crédito — **NestJS + PostgreSQL + Kafka**.
 
-## 🚀 Cómo levantarlo (1 comando)
+## Cómo levantarlo (1 comando)
 
 ```bash
 cp .env.example .env
@@ -15,9 +15,9 @@ docker compose up --build
 | Swagger | http://localhost:3717/docs |
 | Postman | `postman/ms-quotas.postman_collection.json` |
 
-> ¿Algo falla? → [Troubleshooting](#-troubleshooting)
+> ¿Algo falla? → [Troubleshooting](#troubleshooting)
 
-## 🧪 Probarlo en 2 minutos
+## Probarlo en 2 minutos
 
 ```bash
 # 1. Token
@@ -32,7 +32,7 @@ curl -s -X POST localhost:3717/credits -H "Authorization: Bearer $TOKEN" \
 # 3. Pagar una cuota (usa un id de las cuotas del paso 2)
 curl -s -X POST localhost:3717/quotas/<quotaId>/pay \
   -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: intento-1'
-# 👉 repite este mismo curl: devuelve lo mismo, NO cobra dos veces
+# repite este mismo curl: devuelve lo mismo, NO cobra dos veces
 
 # 4. Job de mora
 curl -s -X POST localhost:3717/jobs/run-overdue-check -H "Authorization: Bearer $TOKEN"
@@ -44,18 +44,18 @@ curl -s "localhost:3717/credits/user-123/quotas?status=PENDING&page=1&limit=10" 
 
 Más fácil aún: importa la colección de Postman — el login guarda el token solo.
 
-## 📌 Endpoints
+## Endpoints
 
 | Método | Ruta | Qué hace | Auth |
 |---|---|---|---|
-| POST | `/auth/login` | JWT de prueba para cualquier `userId` | — |
-| POST | `/credits` | Crea crédito + cronograma de cuotas (cada 30 días) | ✅ |
-| POST | `/quotas/:id/pay` | Paga una cuota (idempotente con `Idempotency-Key`) | ✅ |
-| POST | `/jobs/run-overdue-check` | Vencidas → `OVERDUE` + penalidad 15% (simula CRON) | ✅ |
-| GET | `/credits/:userId/quotas` | Lista cuotas, filtro `?status=` + paginación | ✅ |
-| GET | `/health` | Salud del servicio | — |
+| POST | `/auth/login` | JWT de prueba para cualquier `userId` | No |
+| POST | `/credits` | Crea crédito + cronograma de cuotas (cada 30 días) | Sí |
+| POST | `/quotas/:id/pay` | Paga una cuota (idempotente con `Idempotency-Key`) | Sí |
+| POST | `/jobs/run-overdue-check` | Vencidas → `OVERDUE` + penalidad 15% (simula CRON) | Sí |
+| GET | `/credits/:userId/quotas` | Lista cuotas, filtro `?status=` + paginación | Sí |
+| GET | `/health` | Salud del servicio | No |
 
-## 🧠 Decisiones de diseño (resumen)
+## Decisiones de diseño (resumen)
 
 **¿Por qué PostgreSQL?**
 - La idempotencia se garantiza con un **unique constraint** sobre la `Idempotency-Key`.
@@ -86,7 +86,7 @@ Más fácil aún: importa la colección de Postman — el login guarda el token 
 - Nada hardcodeado: todo sale del `.env` y se **valida al arrancar** (falta una variable → no inicia).
 - Errores siempre con el mismo formato: `{ statusCode, error, message, path, timestamp }`.
 
-## 🗂 Estructura
+## Estructura
 
 ```
 src/
@@ -100,7 +100,7 @@ src/
 └── config/    validación del .env
 ```
 
-## ✅ Tests
+## Tests
 
 ```bash
 npm install && npm test   # 20 tests
@@ -108,7 +108,7 @@ npm install && npm test   # 20 tests
 
 Cubren lo importante: cálculo del cronograma, idempotencia (incluida la carrera concurrente), transiciones de estado y el lock del job.
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 | Problema | Solución |
 |---|---|
@@ -116,7 +116,7 @@ Cubren lo importante: cálculo del cronograma, idempotencia (incluida la carrera
 | API no arranca: `password authentication failed` | Volumen viejo con otra contraseña → `docker compose down -v` y volver a levantar |
 | Sin Docker (dev local) | Postgres propio en `.env` + `EVENT_BUS=stub` + `npm run start:dev` |
 
-## 📝 Notas de alcance
+## Notas de alcance
 
 - `DB_SYNCHRONIZE=true` para simplificar la prueba (en producción: migraciones).
 - Cuota en mora se paga completa (monto + penalidad); no hay pagos parciales.
