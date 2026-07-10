@@ -2,12 +2,41 @@
 
 Microservicio de cuotas de crédito — **NestJS + PostgreSQL + Kafka**.
 
-## Cómo levantarlo (1 comando)
+## Cómo levantarlo (paso a paso)
+
+Único requisito: **Docker** (con Compose v2, viene incluido en Docker Desktop).
+
+**Paso 1 — Clonar el repositorio**
+
+```bash
+git clone https://github.com/fabrizzioper/ms-quotas.git
+cd ms-quotas
+```
+
+**Paso 2 — Crear el archivo `.env`** (obligatorio, sin esto no arranca)
 
 ```bash
 cp .env.example .env
+```
+
+No hace falta editar nada: los valores por defecto funcionan tal cual.
+
+**Paso 3 — Levantar todo**
+
+```bash
 docker compose up --build
 ```
+
+La primera vez tarda unos minutos (descarga imágenes y compila). Está listo cuando veas en los logs:
+
+```
+api-1  | ... Kafka producer connected
+api-1  | ... Nest application successfully started
+```
+
+**Paso 4 — Verificar que funciona**
+
+Abre http://localhost:3717/health — debe responder `{"status":"ok","database":"up",...}`.
 
 | Qué | Dónde |
 |---|---|
