@@ -9,7 +9,7 @@
     "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "baseUrl", "value": "http://localhost:3717" },
     { "key": "userId", "value": "user-123" },
     { "key": "accessToken", "value": "" },
     { "key": "quotaId", "value": "" },

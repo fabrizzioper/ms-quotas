@@ -11,9 +11,9 @@ cp .env.example .env   # ajusta valores si lo deseas
 docker compose up --build
 ```
 
-Eso levanta **API + PostgreSQL + Kafka (KRaft)** en un solo comando. La API queda en `http://localhost:3000` y la documentación Swagger en `http://localhost:3000/docs`.
+Eso levanta **API + PostgreSQL + Kafka (KRaft)** en un solo comando. La API queda en `http://localhost:3717` y la documentación Swagger en `http://localhost:3717/docs`.
 
-> El puerto del Postgres del contenedor se expone en el host según `DB_PORT` del `.env` (por defecto `5432`; cámbialo si ya tienes un Postgres local en ese puerto). Dentro de la red de compose la API conecta a `postgres:5432`.
+> El puerto del Postgres del contenedor se expone en el host según `DB_PORT` del `.env` (por defecto `5477`; cámbialo si ya tienes un Postgres local en ese puerto). Dentro de la red de compose la API conecta a `postgres:5432`.
 
 **Troubleshooting**
 - *Puerto ocupado* (`bind: address already in use`): cambia `PORT` o `DB_PORT` en el `.env` y vuelve a levantar.
@@ -36,30 +36,30 @@ npm test
 
 ## Documentación de la API
 
-- **Swagger/OpenAPI**: `http://localhost:3000/docs` (usa el botón *Authorize* con el token de `/auth/login`).
+- **Swagger/OpenAPI**: `http://localhost:3717/docs` (usa el botón *Authorize* con el token de `/auth/login`).
 - **Colección de Postman**: [`postman/ms-quotas.postman_collection.json`](postman/ms-quotas.postman_collection.json) — impórtala en Postman (*File → Import*). El request de *Login* guarda el token automáticamente y *Crear crédito* guarda el `quotaId` de la primera cuota, así que puedes ejecutar la colección en orden sin copiar nada a mano.
 
 ## Flujo de prueba rápido (curl)
 
 ```bash
 # 1. Token (cualquier userId)
-TOKEN=$(curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
+TOKEN=$(curl -s -X POST localhost:3717/auth/login -H 'Content-Type: application/json' \
   -d '{"userId":"user-123"}' | jq -r .accessToken)
 
 # 2. Crear crédito con cronograma
-curl -s -X POST localhost:3000/credits -H "Authorization: Bearer $TOKEN" \
+curl -s -X POST localhost:3717/credits -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"userId":"user-123","amountTotal":900,"numberOfQuotas":3,"startDate":"2026-08-01"}'
 
 # 3. Pagar una cuota (idempotente)
-curl -s -X POST localhost:3000/quotas/<quotaId>/pay \
+curl -s -X POST localhost:3717/quotas/<quotaId>/pay \
   -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: intento-1'
 
 # 4. Job de mora
-curl -s -X POST localhost:3000/jobs/run-overdue-check -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:3717/jobs/run-overdue-check -H "Authorization: Bearer $TOKEN"
 
 # 5. Consulta con filtros y paginación
-curl -s "localhost:3000/credits/user-123/quotas?status=PENDING&page=1&limit=10" \
+curl -s "localhost:3717/credits/user-123/quotas?status=PENDING&page=1&limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
