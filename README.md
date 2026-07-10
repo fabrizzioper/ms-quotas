@@ -13,7 +13,11 @@ docker compose up --build
 
 Eso levanta **API + PostgreSQL + Kafka (KRaft)** en un solo comando. La API queda en `http://localhost:3000` y la documentación Swagger en `http://localhost:3000/docs`.
 
-> El puerto del Postgres del contenedor se expone en el host según `DB_PORT` del `.env` (por defecto `5433`, para no chocar con un Postgres local en `5432`). Dentro de la red de compose la API conecta a `postgres:5432`.
+> El puerto del Postgres del contenedor se expone en el host según `DB_PORT` del `.env` (por defecto `5432`; cámbialo si ya tienes un Postgres local en ese puerto). Dentro de la red de compose la API conecta a `postgres:5432`.
+
+**Troubleshooting**
+- *Puerto ocupado* (`bind: address already in use`): cambia `PORT` o `DB_PORT` en el `.env` y vuelve a levantar.
+- *La API no arranca con `password authentication failed`*: hay un volumen de Postgres previo creado con otra contraseña. Ejecuta `docker compose down -v` (borra los datos) y levanta de nuevo.
 
 ### Desarrollo local (sin Docker)
 
