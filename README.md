@@ -1,139 +1,123 @@
-# ms-quotas — Microservicio de Cuotas
+# ms-quotas
 
-Microservicio en **NestJS + TypeScript** que administra el cronograma de cuotas de un crédito: creación del cronograma, pago idempotente, job de mora con penalidad y consulta paginada, todo protegido con JWT y publicando eventos de dominio a **Kafka**.
+Microservicio de cuotas de crédito — **NestJS + PostgreSQL + Kafka**.
 
-## Levantar el proyecto
-
-Requisitos: **Docker con Compose v2** (para el flujo de prueba con curl también se usa [`jq`](https://jqlang.github.io/jq/), opcional).
+## 🚀 Cómo levantarlo (1 comando)
 
 ```bash
-cp .env.example .env   # ajusta valores si lo deseas
+cp .env.example .env
 docker compose up --build
 ```
 
-Eso levanta **API + PostgreSQL + Kafka (KRaft)** en un solo comando. La API queda en `http://localhost:3717` y la documentación Swagger en `http://localhost:3717/docs`.
+| Qué | Dónde |
+|---|---|
+| API | http://localhost:3717 |
+| Swagger | http://localhost:3717/docs |
+| Postman | `postman/ms-quotas.postman_collection.json` |
 
-> El puerto del Postgres del contenedor se expone en el host según `DB_PORT` del `.env` (por defecto `5477`; cámbialo si ya tienes un Postgres local en ese puerto). Dentro de la red de compose la API conecta a `postgres:5432`.
+> ¿Algo falla? → [Troubleshooting](#-troubleshooting)
 
-**Troubleshooting**
-- *Puerto ocupado* (`bind: address already in use`): cambia `PORT` o `DB_PORT` en el `.env` y vuelve a levantar.
-- *La API no arranca con `password authentication failed`*: hay un volumen de Postgres previo creado con otra contraseña. Ejecuta `docker compose down -v` (borra los datos) y levanta de nuevo.
-
-### Desarrollo local (sin Docker)
-
-```bash
-npm install
-# apunta DB_HOST/DB_PORT de tu .env a un Postgres accesible
-# si no tienes Kafka local: EVENT_BUS=stub
-npm run start:dev
-```
-
-### Tests
+## 🧪 Probarlo en 2 minutos
 
 ```bash
-npm test
-```
-
-## Documentación de la API
-
-- **Swagger/OpenAPI**: `http://localhost:3717/docs` (usa el botón *Authorize* con el token de `/auth/login`).
-- **Colección de Postman**: [`postman/ms-quotas.postman_collection.json`](postman/ms-quotas.postman_collection.json) — impórtala en Postman (*File → Import*). El request de *Login* guarda el token automáticamente y *Crear crédito* guarda el `quotaId` de la primera cuota, así que puedes ejecutar la colección en orden sin copiar nada a mano.
-
-## Flujo de prueba rápido (curl)
-
-```bash
-# 1. Token (cualquier userId)
+# 1. Token
 TOKEN=$(curl -s -X POST localhost:3717/auth/login -H 'Content-Type: application/json' \
   -d '{"userId":"user-123"}' | jq -r .accessToken)
 
-# 2. Crear crédito con cronograma
+# 2. Crear crédito (900 en 3 cuotas)
 curl -s -X POST localhost:3717/credits -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"userId":"user-123","amountTotal":900,"numberOfQuotas":3,"startDate":"2026-08-01"}'
 
-# 3. Pagar una cuota (idempotente)
+# 3. Pagar una cuota (usa un id de las cuotas del paso 2)
 curl -s -X POST localhost:3717/quotas/<quotaId>/pay \
   -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: intento-1'
+# 👉 repite este mismo curl: devuelve lo mismo, NO cobra dos veces
 
 # 4. Job de mora
 curl -s -X POST localhost:3717/jobs/run-overdue-check -H "Authorization: Bearer $TOKEN"
 
-# 5. Consulta con filtros y paginación
+# 5. Listar cuotas
 curl -s "localhost:3717/credits/user-123/quotas?status=PENDING&page=1&limit=10" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-## Decisiones de diseño
+Más fácil aún: importa la colección de Postman — el login guarda el token solo.
 
-### ¿Por qué PostgreSQL?
+## 📌 Endpoints
 
-- **Idempotencia con garantías reales**: la `Idempotency-Key` se persiste en una tabla con *primary key* única; ante dos requests concurrentes con la misma clave, el constraint de unicidad decide un único ganador y el perdedor devuelve la respuesta almacenada. En MongoDB esto exige transacciones sobre replica set y es menos directo.
-- **Transiciones de estado atómicas**: pagar la cuota y finalizar el crédito ocurren en **una transacción** con locks pesimistas (`SELECT … FOR UPDATE`), eliminando carreras entre pagos concurrentes del mismo crédito.
-- **El dominio es relacional**: un crédito tiene N cuotas con integridad referencial y agregaciones (conteo de pendientes) triviales en SQL.
-- Bonus: los **advisory locks** de Postgres resuelven el lock del job de mora sin infraestructura extra (Redis, etc.).
+| Método | Ruta | Qué hace | Auth |
+|---|---|---|---|
+| POST | `/auth/login` | JWT de prueba para cualquier `userId` | — |
+| POST | `/credits` | Crea crédito + cronograma de cuotas (cada 30 días) | ✅ |
+| POST | `/quotas/:id/pay` | Paga una cuota (idempotente con `Idempotency-Key`) | ✅ |
+| POST | `/jobs/run-overdue-check` | Vencidas → `OVERDUE` + penalidad 15% (simula CRON) | ✅ |
+| GET | `/credits/:userId/quotas` | Lista cuotas, filtro `?status=` + paginación | ✅ |
+| GET | `/health` | Salud del servicio | — |
 
-### Arquitectura
+## 🧠 Decisiones de diseño (resumen)
 
-Módulos por *feature* (bounded context), cada uno con sus DTOs, entidades, servicio y controlador:
+**¿Por qué PostgreSQL?**
+- La idempotencia se garantiza con un **unique constraint** sobre la `Idempotency-Key`.
+- Pago + finalizar crédito = **una transacción** con locks (`FOR UPDATE`). Sin carreras.
+- Crédito → cuotas es relacional puro.
+
+**Idempotencia del pago**
+- Misma key → devuelve la respuesta guardada, no repite el cobro.
+- Dos requests a la vez con la misma key → el constraint elige un ganador, el otro recibe la misma respuesta.
+- Key usada en otra cuota → `422`. Cuota ya pagada → `409`.
+
+**Estados**
+- Cuota: `PENDING → PAID`, `PENDING → OVERDUE → PAID`.
+- Crédito: `ACTIVE → FINALIZADO` al pagar la última cuota.
+
+**Job de mora**
+- Un solo `UPDATE` atómico sobre cuotas `PENDING` vencidas → la penalidad del 15% se aplica **una sola vez**, aunque el job corra mil veces.
+- **Advisory lock** de Postgres: dos jobs a la vez es imposible (el segundo recibe `409`).
+
+**Eventos (Kafka real en el compose)**
+- Publica `quota.paid`, `credit.completed`, `quota.overdue` **después del commit**.
+- Detrás de una interfaz `EventBus` → se cambia a stub con `EVENT_BUS=stub` (sin tocar código).
+
+**Cálculo de cuotas**
+- En **centavos** (sin errores de decimales). La última cuota absorbe el residuo: 100 / 3 = `33.33 + 33.33 + 33.34`.
+
+**Config**
+- Nada hardcodeado: todo sale del `.env` y se **valida al arrancar** (falta una variable → no inicia).
+- Errores siempre con el mismo formato: `{ statusCode, error, message, path, timestamp }`.
+
+## 🗂 Estructura
 
 ```
 src/
-├── auth/       login JWT + JwtAuthGuard global + decorador @Public
-├── credits/    creación de crédito + consulta de cuotas
-│   └── domain/quota-schedule.ts   ← cálculo del cronograma (función pura, testeable)
-├── quotas/     pago idempotente + entidad IdempotencyKey
-├── jobs/       job de mora con advisory lock
-├── events/     EventBus (interfaz) + KafkaEventBus / StubEventBus
-├── health/     endpoint público de salud
-├── common/     exception filter global, DTOs de paginación, transformers
-└── config/     validación estricta de variables de entorno
+├── auth/      login + guard JWT global (@Public para excepciones)
+├── credits/   crear crédito + listar cuotas (domain/quota-schedule.ts = cálculo puro)
+├── quotas/    pago idempotente
+├── jobs/      job de mora + lock
+├── events/    EventBus → Kafka o stub
+├── health/    health check
+├── common/    exception filter, paginación
+└── config/    validación del .env
 ```
 
-- **Nada hardcodeado**: toda la configuración (DB, JWT, Kafka, tasa de penalidad, intervalo de días) viene de variables de entorno **validadas al arrancar** (`config/env.validation.ts`); si falta una variable la app no inicia.
-- **Manejo de errores centralizado**: `AllExceptionsFilter` global devuelve siempre `{ statusCode, error, message, path, timestamp }`.
-- **Validación de entrada** con `class-validator` + `ValidationPipe` global (`whitelist` + `forbidNonWhitelisted`).
+## ✅ Tests
 
-### Cálculo del cronograma
+```bash
+npm install && npm test   # 20 tests
+```
 
-`buildQuotaSchedule` trabaja **en centavos** para evitar errores de punto flotante: cada cuota recibe `floor(total/n)` y la última absorbe el residuo, de modo que la suma de cuotas es siempre exactamente `amountTotal`. Los vencimientos se espacian cada `QUOTA_INTERVAL_DAYS` (30) días a partir de `startDate` (la cuota 1 vence a los 30 días).
+Cubren lo importante: cálculo del cronograma, idempotencia (incluida la carrera concurrente), transiciones de estado y el lock del job.
 
-### Idempotencia del pago (`POST /quotas/:id/pay`)
+## 🔧 Troubleshooting
 
-1. Si llega `Idempotency-Key`, dentro de la transacción se busca la clave: si existe y corresponde a la misma cuota, se devuelve **la respuesta almacenada** sin repetir el efecto; si corresponde a otra operación → `422`.
-2. Si no existe, se ejecuta el pago (lock pesimista sobre la cuota y luego sobre el crédito) y se inserta la clave con la respuesta **en la misma transacción**.
-3. **Carrera** (dos requests simultáneas con la misma clave): ambas pasan la lectura inicial, una comitea y la otra falla con violación de unicidad (`23505`); ese error se captura y se devuelve la respuesta de la ganadora. El contrato idempotente se cumple incluso bajo concurrencia.
+| Problema | Solución |
+|---|---|
+| `bind: address already in use` | Cambia `PORT` / `DB_PORT` / `KAFKA_EXTERNAL_PORT` en `.env` |
+| API no arranca: `password authentication failed` | Volumen viejo con otra contraseña → `docker compose down -v` y volver a levantar |
+| Sin Docker (dev local) | Postgres propio en `.env` + `EVENT_BUS=stub` + `npm run start:dev` |
 
-Transiciones de estado: `PENDING|OVERDUE → PAID` (una cuota en mora puede pagarse, incluyendo su penalidad); `PAID → PAID` es rechazado con `409`. Si era la última cuota sin pagar, el crédito pasa a `FINALIZADO` en la misma transacción.
+## 📝 Notas de alcance
 
-### Job de mora (`POST /jobs/run-overdue-check`)
-
-- Un **único `UPDATE` atómico** marca `OVERDUE` y aplica la penalidad del 15% (`OVERDUE_PENALTY_RATE`) **solo** a cuotas `PENDING` vencidas — por construcción la penalidad se aplica exactamente una vez por cuota, aunque el job corra muchas veces.
-- **Lock (bonus)**: `pg_try_advisory_lock` impide dos ejecuciones concurrentes del job; la segunda recibe `409` inmediatamente. El lock se libera en `finally` incluso si el UPDATE falla.
-- La penalidad se guarda en `penaltyAmount` (no muta `amount`) para conservar trazabilidad del monto original.
-
-### Eventos (bonus Kafka real)
-
-El dominio publica a través de la interfaz `EventBus` (token `EVENT_BUS`), con dos implementaciones intercambiables por env (`EVENT_BUS=kafka|stub`):
-
-- `KafkaEventBus` (kafkajs) publica `quota.paid`, `credit.completed` y `quota.overdue` al broker del compose.
-- `StubEventBus` loguea el evento (útil en desarrollo/tests).
-
-Los eventos se publican **después del commit** de la transacción: nunca se anuncia un pago que fue revertido. Un fallo de publicación no rompe la operación de negocio (se loguea); en producción esto evolucionaría a un patrón *outbox*.
-
-### Autenticación
-
-Todos los endpoints están protegidos por un `JwtAuthGuard` **global** (`APP_GUARD`); las excepciones (`/health`, `/auth/login`) se marcan con el decorador `@Public()`. `POST /auth/login` firma un JWT para cualquier `userId` (sin sistema de usuarios real, según el alcance).
-
-### Alcance asumido
-
-- `DB_SYNCHRONIZE=true` (TypeORM crea el esquema) para simplificar la prueba; en producción serían migraciones versionadas.
-- El monto de una cuota en mora se paga completo (cuota + penalidad); no hay pagos parciales.
-- `GET /credits/:userId/quotas` ordena por fecha de vencimiento y expone `meta` de paginación (`page`, `limit`, `totalItems`, `totalPages`).
-
-## Tests
-
-20 tests unitarios centrados en la lógica de negocio:
-
-- `quota-schedule.spec.ts` — división exacta e inexacta, residuo en la última cuota, suma siempre igual al total, fechas cada 30 días cruzando mes/año.
-- `quotas.service.spec.ts` — pago feliz, última cuota → crédito `FINALIZADO`, pago de cuota `OVERDUE` con penalidad, `409` si ya está pagada, `404` si no existe, y los tres escenarios de idempotencia (primer intento, reintento, carrera con violación de unicidad).
-- `overdue.service.spec.ts` — penalidad única sobre `PENDING` vencidas, `409` si el lock está tomado, liberación del lock ante fallos, cero eventos si no hay vencidas.
+- `DB_SYNCHRONIZE=true` para simplificar la prueba (en producción: migraciones).
+- Cuota en mora se paga completa (monto + penalidad); no hay pagos parciales.
+- Puertos por defecto poco comunes (3717/5477/9377) para no chocar con servicios locales.
