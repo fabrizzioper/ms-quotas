@@ -62,6 +62,12 @@ curl -s -X POST localhost:3717/credits -H "Authorization: Bearer $TOKEN" \
 curl -s -X POST localhost:3717/quotas/<quotaId>/pay \
   -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: intento-1'
 # repite este mismo curl: devuelve lo mismo, NO cobra dos veces
+# Respuesta:
+# {
+#   "quota": { "id": "...", "status": "PAID", "amount": 300, "penaltyAmount": 0, "totalPaid": 300, ... },
+#   "credit": { "id": "...", "status": "ACTIVE" },
+#   "creditCompleted": false        <- true si era la última cuota (crédito FINALIZADO)
+# }
 
 # 4. Job de mora
 curl -s -X POST localhost:3717/jobs/run-overdue-check -H "Authorization: Bearer $TOKEN"
