@@ -1,0 +1,124 @@
+{
+  "info": {
+    "name": "ms-quotas",
+    "description": "Microservicio de cuotas de crédito. Flujo sugerido: 1) Login (guarda el token automáticamente), 2) Crear crédito (guarda el quotaId de la primera cuota), 3) Pagar cuota — reintenta con la misma Idempotency-Key para ver la idempotencia, 4) Job de mora, 5) Listar cuotas con filtros.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "userId", "value": "user-123" },
+    { "key": "accessToken", "value": "" },
+    { "key": "quotaId", "value": "" },
+    { "key": "idempotencyKey", "value": "intento-1" }
+  ],
+  "item": [
+    {
+      "name": "Health (público)",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    },
+    {
+      "name": "Auth — Login (guarda el token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', json.accessToken);",
+              "pm.test('devuelve accessToken', () => pm.expect(json.accessToken).to.be.a('string'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+      }
+    },
+    {
+      "name": "Credits — Crear crédito (guarda quotaId)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('quotaId', json.quotas[0].id);",
+              "pm.test('crea el cronograma completo', () => pm.expect(json.quotas).to.have.lengthOf(json.numberOfQuotas));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"amountTotal\": 900,\n  \"numberOfQuotas\": 3,\n  \"startDate\": \"2026-08-01\"\n}"
+        },
+        "url": { "raw": "{{baseUrl}}/credits", "host": ["{{baseUrl}}"], "path": ["credits"] }
+      }
+    },
+    {
+      "name": "Quotas — Pagar cuota (idempotente)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Idempotency-Key",
+            "value": "{{idempotencyKey}}",
+            "description": "Reenvía esta request con la misma key: devuelve el mismo resultado sin duplicar el efecto"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/quotas/{{quotaId}}/pay",
+          "host": ["{{baseUrl}}"],
+          "path": ["quotas", "{{quotaId}}", "pay"]
+        }
+      }
+    },
+    {
+      "name": "Jobs — Job de mora (simula CRON)",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "{{baseUrl}}/jobs/run-overdue-check",
+          "host": ["{{baseUrl}}"],
+          "path": ["jobs", "run-overdue-check"]
+        }
+      }
+    },
+    {
+      "name": "Credits — Listar cuotas (filtro + paginación)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/credits/{{userId}}/quotas?status=PENDING&page=1&limit=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["credits", "{{userId}}", "quotas"],
+          "query": [
+            { "key": "status", "value": "PENDING", "description": "PENDING | PAID | OVERDUE (opcional)" },
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "10" }
+          ]
+        }
+      }
+    }
+  ]
+}

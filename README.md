@@ -34,6 +34,11 @@ npm run start:dev
 npm test
 ```
 
+## Documentación de la API
+
+- **Swagger/OpenAPI**: `http://localhost:3000/docs` (usa el botón *Authorize* con el token de `/auth/login`).
+- **Colección de Postman**: [`postman/ms-quotas.postman_collection.json`](postman/ms-quotas.postman_collection.json) — impórtala en Postman (*File → Import*). El request de *Login* guarda el token automáticamente y *Crear crédito* guarda el `quotaId` de la primera cuota, así que puedes ejecutar la colección en orden sin copiar nada a mano.
+
 ## Flujo de prueba rápido (curl)
 
 ```bash
